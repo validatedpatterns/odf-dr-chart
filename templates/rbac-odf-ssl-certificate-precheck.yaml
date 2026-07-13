@@ -1,3 +1,4 @@
+{{- if eq "1" (include "rdr.odfSslCertificateExtractorEnabled" . | trim) }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -58,4 +59,4 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: odf-ssl-certificate-precheck
-  namespace: {{ include "opp.clusterCaMgtNamespace" . }}
+  namespace: {{ include "opp.clusterCaMgtNamespace" . }}{{- end }}

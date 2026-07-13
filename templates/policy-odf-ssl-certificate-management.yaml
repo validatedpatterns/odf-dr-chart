@@ -1,3 +1,4 @@
+{{- if eq "1" (include "rdr.odfSslCertificateExtractorEnabled" . | trim) }}
 apiVersion: policy.open-cluster-management.io/v1
 kind: Policy
 metadata:
@@ -44,3 +45,4 @@ spec:
                 name: cluster-proxy-ca-bundle
         remediationAction: enforce
         severity: high
+{{- end }}

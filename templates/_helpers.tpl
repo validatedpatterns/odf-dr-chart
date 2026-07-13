@@ -44,6 +44,20 @@
 {{- if not (hasKey $odf "postInstallFixesEnabled") -}}1{{- else if index $odf "postInstallFixesEnabled" -}}1{{- else -}}0{{- end -}}
 {{- end -}}
 
+{{/* Ramen hub trusted-CA job: patch s3StoreProfiles from cluster-proxy-ca-bundle. Default on when enabled omitted. */}}
+{{- define "rdr.odfRamenTrustedCaEnabled" -}}
+{{- if ne "1" (include "rdr.odfPostInstallFixesEnabled" . | trim) -}}0{{- else -}}
+{{- $cfg := .Values.odfRamenTrustedCa | default dict -}}
+{{- if not (hasKey $cfg "enabled") -}}1{{- else if index $cfg "enabled" -}}1{{- else -}}0{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/* ODF SSL extraction jobs, ACM CA policies, and spoke distribution. Default on when enabled omitted. */}}
+{{- define "rdr.odfSslCertificateExtractorEnabled" -}}
+{{- $cfg := .Values.odfSslCertificateExtractor | default dict -}}
+{{- if not (hasKey $cfg "enabled") -}}1{{- else if index $cfg "enabled" -}}1{{- else -}}0{{- end -}}
+{{- end -}}
+
 {{/* Namespace for ODF CA post-install Jobs. */}}
 {{- define "rdr.clusterCaMgtNamespace" -}}
 {{- .Values.clusterCaMgt.namespace | default "cluster-ca-mgt" -}}
@@ -81,3 +95,4 @@ checksum/odf-dr-ansible: {{ include "rdr.ansibleConfigChecksum" . | quote }}
 {{- define "opp.primaryClusterName" -}}{{ include "rdr.primaryClusterName" . }}{{- end -}}
 {{- define "opp.secondaryClusterName" -}}{{ include "rdr.secondaryClusterName" . }}{{- end -}}
 {{- define "opp.clusterCaMgtNamespace" -}}{{ include "rdr.clusterCaMgtNamespace" . }}{{- end -}}
+{{- define "opp.odfSslCertificateExtractorEnabled" -}}{{ include "rdr.odfSslCertificateExtractorEnabled" . }}{{- end -}}

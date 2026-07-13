@@ -12,6 +12,7 @@ echo "Starting ODF DR prerequisites check..."
 HUB_CLUSTER="local-cluster"
 PRIMARY_CLUSTER="${PRIMARY_CLUSTER:-ocp-primary}"
 SECONDARY_CLUSTER="${SECONDARY_CLUSTER:-ocp-secondary}"
+CA_MATERIAL_MODE="${CA_MATERIAL_MODE:-legacy}"
 KUBECONFIG_DIR="/tmp/kubeconfigs"
 MAX_ATTEMPTS=120  # 2 hours with 1 minute intervals
 SLEEP_INTERVAL=60 # 1 minute between checks
@@ -147,7 +148,7 @@ check_s3_service_health() {
 
 	# If still not found, try checking deployment instead
 	if [[ $noobaa_operator_pods -eq 0 ]]; then
-		local noobaa_operator_deployment=$(oc --kubeconfig="$kubeconfig" get deployment -n openshift-storage --no-headers 2>/dev/null | grep -cE "noobaa-operator|noobaa.*operator" || echo "0")
+		local noobaa_operator_deployment=$(oc --kubeconfig="$kubeconfig" get deployment -n openshift-storage --no-headers 2>/dev/null | grep -E "noobaa-operator|noobaa.*operator" | wc -l || echo "0")
 		noobaa_operator_deployment=$(echo "$noobaa_operator_deployment" | tr -d ' \n')
 		if [[ $noobaa_operator_deployment -gt 0 ]]; then
 			echo "  NooBaa operator deployment found (pods may be managed by ODF operator)"
@@ -276,13 +277,119 @@ check_ca_configuration() {
 	return 0
 }
 
+# Count PEM certificate blocks in a bundle (trust-manager / vp-manage output has no legacy comment markers).
+count_pem_blocks() {
+	local bundle="$1"
+	echo "$bundle" | grep -c 'BEGIN CERTIFICATE' 2>/dev/null || echo "0"
+}
+
+# Legacy opp-policy SSL extraction adds "# CA from <cluster>-ca" markers per cluster contribution.
+check_ca_material_legacy_markers() {
+	local hub_ca_bundle="$1"
+	local primary_ca_bundle="$2"
+	local secondary_ca_bundle="$3"
+
+	echo "🔍 Debug: Checking legacy CA bundle markers..."
+	echo "Hub CA bundle size: ${#hub_ca_bundle} characters"
+	echo "Primary CA bundle size: ${#primary_ca_bundle} characters"
+	echo "Secondary CA bundle size: ${#secondary_ca_bundle} characters"
+	echo "Hub CA bundle first 500 chars:"
+	echo "${hub_ca_bundle:0:500}"
+	echo ""
+
+	if [[ "$hub_ca_bundle" != *"# CA from hub-ca"* ]]; then
+		echo "Available markers in hub CA bundle:"
+		echo "$hub_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
+		report_check_failure "CA material: hub bundle missing marker '# CA from hub-ca'"
+		return 1
+	fi
+
+	if [[ "$primary_ca_bundle" != *"# CA from hub-ca"* ]]; then
+		echo "Available markers in primary CA bundle:"
+		echo "$primary_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
+		report_check_failure "CA material: primary bundle missing marker '# CA from hub-ca'"
+		return 1
+	fi
+
+	if [[ "$secondary_ca_bundle" != *"# CA from hub-ca"* ]]; then
+		echo "Available markers in secondary CA bundle:"
+		echo "$secondary_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
+		report_check_failure "CA material: secondary bundle missing marker '# CA from hub-ca'"
+		return 1
+	fi
+
+	if [[ "$hub_ca_bundle" != *"# CA from ${PRIMARY_CLUSTER}-ca"* ]]; then
+		report_check_failure "CA material: hub bundle missing marker '# CA from ${PRIMARY_CLUSTER}-ca'"
+		return 1
+	fi
+
+	if [[ "$primary_ca_bundle" != *"# CA from ${PRIMARY_CLUSTER}-ca"* ]]; then
+		report_check_failure "CA material: primary bundle missing marker '# CA from ${PRIMARY_CLUSTER}-ca'"
+		return 1
+	fi
+
+	if [[ "$secondary_ca_bundle" != *"# CA from ${PRIMARY_CLUSTER}-ca"* ]]; then
+		report_check_failure "CA material: secondary bundle missing marker '# CA from ${PRIMARY_CLUSTER}-ca'"
+		return 1
+	fi
+
+	if [[ "$hub_ca_bundle" != *"# CA from ${SECONDARY_CLUSTER}-ca"* ]]; then
+		report_check_failure "CA material: hub bundle missing marker '# CA from ${SECONDARY_CLUSTER}-ca'"
+		return 1
+	fi
+
+	if [[ "$primary_ca_bundle" != *"# CA from ${SECONDARY_CLUSTER}-ca"* ]]; then
+		report_check_failure "CA material: primary bundle missing marker '# CA from ${SECONDARY_CLUSTER}-ca'"
+		return 1
+	fi
+
+	if [[ "$secondary_ca_bundle" != *"# CA from ${SECONDARY_CLUSTER}-ca"* ]]; then
+		report_check_failure "CA material: secondary bundle missing marker '# CA from ${SECONDARY_CLUSTER}-ca'"
+		return 1
+	fi
+
+	return 0
+}
+
+# vp-manage-proxy-cluster-ca / trust-manager: merged PEM without per-cluster comment markers.
+check_ca_material_trust_bundle() {
+	local hub_ca_bundle="$1"
+	local primary_ca_bundle="$2"
+	local secondary_ca_bundle="$3"
+	local hub_pems primary_pems secondary_pems
+
+	hub_pems=$(count_pem_blocks "$hub_ca_bundle")
+	primary_pems=$(count_pem_blocks "$primary_ca_bundle")
+	secondary_pems=$(count_pem_blocks "$secondary_ca_bundle")
+
+	echo "🔍 Debug: trust-bundle CA material (no legacy markers expected)"
+	echo "Hub PEM blocks: $hub_pems; primary: $primary_pems; secondary: $secondary_pems"
+
+	if [[ "$hub_pems" -lt 1 ]]; then
+		report_check_failure "CA material: hub bundle has no PEM certificates (trust-bundle mode)"
+		return 1
+	fi
+
+	if [[ "$primary_pems" -lt 1 ]]; then
+		report_check_failure "CA material: primary bundle has no PEM certificates (trust-bundle mode)"
+		return 1
+	fi
+
+	if [[ "$secondary_pems" -lt 1 ]]; then
+		report_check_failure "CA material: secondary bundle has no PEM certificates (trust-bundle mode)"
+		return 1
+	fi
+
+	return 0
+}
+
 # Function to check CA material completeness across all clusters
 check_ca_material_completeness() {
 	local hub_kubeconfig="$1"
 	local primary_kubeconfig="$2"
 	local secondary_kubeconfig="$3"
 
-	echo "Checking CA material completeness across all clusters..."
+	echo "Checking CA material completeness across all clusters (mode: ${CA_MATERIAL_MODE})..."
 
 	# Extract CA bundle from each cluster
 	local hub_ca_bundle=$(oc --kubeconfig="$hub_kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
@@ -305,68 +412,18 @@ check_ca_material_completeness() {
 		return 1
 	fi
 
-	# Check if all CA bundles contain certificates from all three clusters
-	echo "🔍 Debug: Checking CA bundle contents..."
-	echo "Hub CA bundle size: ${#hub_ca_bundle} characters"
-	echo "Primary CA bundle size: ${#primary_ca_bundle} characters"
-	echo "Secondary CA bundle size: ${#secondary_ca_bundle} characters"
-	echo "Hub CA bundle first 500 chars:"
-	echo "${hub_ca_bundle:0:500}"
-	echo ""
-
-	# Look for hub cluster certificates
-	if [[ "$hub_ca_bundle" != *"# CA from hub-ca"* ]]; then
-		echo "Available markers in hub CA bundle:"
-		echo "$hub_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
-		report_check_failure "CA material: hub bundle missing marker '# CA from hub-ca'"
-		return 1
-	fi
-
-	if [[ "$primary_ca_bundle" != *"# CA from hub-ca"* ]]; then
-		echo "Available markers in primary CA bundle:"
-		echo "$primary_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
-		report_check_failure "CA material: primary bundle missing marker '# CA from hub-ca'"
-		return 1
-	fi
-
-	if [[ "$secondary_ca_bundle" != *"# CA from hub-ca"* ]]; then
-		echo "Available markers in secondary CA bundle:"
-		echo "$secondary_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
-		report_check_failure "CA material: secondary bundle missing marker '# CA from hub-ca'"
-		return 1
-	fi
-
-	# Look for primary cluster certificates (marker from odf-ssl-certificate-extraction.sh)
-	if [[ "$hub_ca_bundle" != *"# CA from ${PRIMARY_CLUSTER}-ca"* ]]; then
-		report_check_failure "CA material: hub bundle missing marker '# CA from ${PRIMARY_CLUSTER}-ca'"
-		return 1
-	fi
-
-	if [[ "$primary_ca_bundle" != *"# CA from ${PRIMARY_CLUSTER}-ca"* ]]; then
-		report_check_failure "CA material: primary bundle missing marker '# CA from ${PRIMARY_CLUSTER}-ca'"
-		return 1
-	fi
-
-	if [[ "$secondary_ca_bundle" != *"# CA from ${PRIMARY_CLUSTER}-ca"* ]]; then
-		report_check_failure "CA material: secondary bundle missing marker '# CA from ${PRIMARY_CLUSTER}-ca'"
-		return 1
-	fi
-
-	# Look for secondary cluster certificates
-	if [[ "$hub_ca_bundle" != *"# CA from ${SECONDARY_CLUSTER}-ca"* ]]; then
-		report_check_failure "CA material: hub bundle missing marker '# CA from ${SECONDARY_CLUSTER}-ca'"
-		return 1
-	fi
-
-	if [[ "$primary_ca_bundle" != *"# CA from ${SECONDARY_CLUSTER}-ca"* ]]; then
-		report_check_failure "CA material: primary bundle missing marker '# CA from ${SECONDARY_CLUSTER}-ca'"
-		return 1
-	fi
-
-	if [[ "$secondary_ca_bundle" != *"# CA from ${SECONDARY_CLUSTER}-ca"* ]]; then
-		report_check_failure "CA material: secondary bundle missing marker '# CA from ${SECONDARY_CLUSTER}-ca'"
-		return 1
-	fi
+	case "$CA_MATERIAL_MODE" in
+	trust-bundle)
+		if ! check_ca_material_trust_bundle "$hub_ca_bundle" "$primary_ca_bundle" "$secondary_ca_bundle"; then
+			return 1
+		fi
+		;;
+	legacy|*)
+		if ! check_ca_material_legacy_markers "$hub_ca_bundle" "$primary_ca_bundle" "$secondary_ca_bundle"; then
+			return 1
+		fi
+		;;
+	esac
 
 	# Check that all CA bundles are identical (they should contain the same combined certificate data)
 	if [[ "$hub_ca_bundle" != "$primary_ca_bundle" ]]; then

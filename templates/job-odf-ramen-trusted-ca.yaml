@@ -1,4 +1,4 @@
-{{- if eq "1" (include "rdr.odfPostInstallFixesEnabled" . | trim) }}
+{{- if eq "1" (include "rdr.odfRamenTrustedCaEnabled" . | trim) }}
 {{- $t := .Values.odfRamenTrustedCa | default dict }}
 apiVersion: batch/v1
 kind: Job

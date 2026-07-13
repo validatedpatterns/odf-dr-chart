@@ -1,3 +1,4 @@
+{{- if eq "1" (include "rdr.odfSslCertificateExtractorEnabled" . | trim) }}
 apiVersion: apps.open-cluster-management.io/v1
 kind: PlacementRule
 metadata:
@@ -26,3 +27,4 @@ spec:
     - key: name
       operator: NotIn
       values: ["local-cluster"]
+{{- end }}

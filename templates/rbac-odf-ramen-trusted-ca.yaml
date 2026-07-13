@@ -1,4 +1,4 @@
-{{- if eq "1" (include "rdr.odfPostInstallFixesEnabled" . | trim) }}
+{{- if eq "1" (include "rdr.odfRamenTrustedCaEnabled" . | trim) }}
 # Workloads run in clusterCaMgt.namespace; cluster-proxy-ca-bundle remains in openshift-config.
 apiVersion: v1
 kind: ServiceAccount

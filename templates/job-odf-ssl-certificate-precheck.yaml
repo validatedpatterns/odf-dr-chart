@@ -1,3 +1,4 @@
+{{- if eq "1" (include "rdr.odfSslCertificateExtractorEnabled" . | trim) }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -62,3 +63,4 @@ spec:
             path: tasks/kubeconfig.yml
           - key: tasks_kubeconfig_attempt.yml
             path: tasks/kubeconfig-attempt.yml
+{{- end }}

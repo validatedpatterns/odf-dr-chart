@@ -26,12 +26,14 @@ spec:
           value: {{ include "rdr.primaryClusterName" . | quote }}
         - name: SECONDARY_CLUSTER
           value: {{ include "rdr.secondaryClusterName" . | quote }}
+        - name: CA_MATERIAL_MODE
+          value: {{ (.Values.odfDrPrerequisites | default dict).caMaterialMode | default "legacy" | quote }}
         command:
         - /bin/bash
         - -c
         - |
 {{ include "rdr.ansibleStageOnly" . | indent 10 }}
-            export PRIMARY_CLUSTER SECONDARY_CLUSTER
+            export PRIMARY_CLUSTER SECONDARY_CLUSTER CA_MATERIAL_MODE
             ODF_SCRIPT="$STAGE/roles/odf_dr_prerequisites/files/odf-dr-prerequisites-check.sh"
             echo "Running ODF prerequisites script with line-buffered output (kubectl logs -f will show progress)."
             if command -v stdbuf >/dev/null 2>&1; then

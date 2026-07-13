@@ -1,3 +1,4 @@
+{{- if eq "1" (include "rdr.odfSslCertificateExtractorEnabled" . | trim) }}
 apiVersion: policy.open-cluster-management.io/v1
 kind: Policy
 metadata:
@@ -71,3 +72,4 @@ spec:
                 policy.open-cluster-management.io/description: "ODF SSL certificate verification status"
         remediationAction: enforce
         severity: high
+{{- end }}
