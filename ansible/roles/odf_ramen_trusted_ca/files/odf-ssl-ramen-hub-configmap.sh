@@ -112,20 +112,35 @@ if oc get configmap ramen-hub-operator-config -n openshift-operators &>/dev/null
 	PATCHED_VIA_YQ=false
 	if [[ -n "$EXISTING_YAML" ]]; then
 		echo "$EXISTING_YAML" >"$WORK_DIR/existing-ramen-config.yaml"
-		if ! command -v yq &>/dev/null; then
-			die "yq is required (e.g. mikefarah/yq v4)"
-		fi
-		export CA_BUNDLE_BASE64
-		YQ_PATCHED=false
-		if yq eval -i '.s3StoreProfiles[]? |= . + {"caCertificates": strenv(CA_BUNDLE_BASE64)}' "$WORK_DIR/existing-ramen-config.yaml" 2>/dev/null; then
-			YQ_PATCHED=true
-		fi
-		if yq eval -i '.kubeObjectProtection.s3StoreProfiles[]? |= . + {"caCertificates": strenv(CA_BUNDLE_BASE64)}' "$WORK_DIR/existing-ramen-config.yaml" 2>/dev/null; then
-			YQ_PATCHED=true
-		fi
-		if [[ "$YQ_PATCHED" != "true" ]]; then
-			die "yq could not patch s3StoreProfiles (check kubeObjectProtection / top-level s3StoreProfiles). yq: $(yq --version 2>/dev/null || true)"
-		fi
+		command -v python3 &>/dev/null || die "python3 not found — cannot patch ramen_manager_config"
+		# Pure-Python patch using only built-in modules (no PyYAML required).
+		# Reads combined-ca-bundle.crt directly to avoid E2BIG env-var size limits.
+		# Strips any existing caCertificates lines then injects after each s3ProfileName.
+		WORK_DIR="$WORK_DIR" python3 - <<'PYEOF' || die "python3 failed to patch existing-ramen-config.yaml"
+import os, re, base64
+
+work_dir = os.environ["WORK_DIR"]
+
+with open(os.path.join(work_dir, "combined-ca-bundle.crt"), "rb") as f:
+    ca_b64 = base64.b64encode(f.read()).decode("ascii")
+
+path = os.path.join(work_dir, "existing-ramen-config.yaml")
+with open(path, "r") as f:
+    lines = f.readlines()
+
+# Remove stale caCertificates lines so re-runs are idempotent.
+lines = [l for l in lines if not re.match(r'^\s*caCertificates:', l)]
+
+result = []
+for line in lines:
+    result.append(line)
+    if re.match(r'^\s*s3ProfileName:', line):
+        indent = len(line) - len(line.lstrip())
+        result.append(" " * indent + "caCertificates: " + ca_b64 + "\n")
+
+with open(path, "w") as f:
+    f.writelines(result)
+PYEOF
 		grep -q "caCertificates" "$WORK_DIR/existing-ramen-config.yaml" || die "patched file has no caCertificates"
 		cp "$WORK_DIR/existing-ramen-config.yaml" "$WORK_DIR/ramen_manager_config.yaml"
 		PATCHED_VIA_YQ=true
@@ -147,36 +162,31 @@ s3StoreProfiles:
 		echo "$UPDATED_YAML" >"$WORK_DIR/ramen_manager_config.yaml"
 	fi
 
-	echo "  Building ConfigMap manifest (literal block) and oc apply..."
-	oc get configmap ramen-hub-operator-config -n openshift-operators -o yaml >"$WORK_DIR/ramen-configmap-template.yaml" 2>/dev/null || true
+	# Use oc patch --type=merge with a JSON patch file.
+	# oc apply is avoided: it stores the full manifest in last-applied-configuration,
+	# which exceeds the 262144-byte annotation limit when caCertificates is large.
+	echo "  Patching ramen-hub-operator-config via oc patch --type=merge..."
+	PATCH_JSON="$WORK_DIR/ramen-patch.json"
+	WORK_DIR="$WORK_DIR" python3 - <<'PYEOF' || die "python3 failed to build ramen-patch.json"
+import json, os, sys
+work_dir = os.environ["WORK_DIR"]
+with open(os.path.join(work_dir, "ramen_manager_config.yaml"), "r") as f:
+    data = f.read()
+with open(os.path.join(work_dir, "ramen-patch.json"), "w") as f:
+    json.dump({"data": {"ramen_manager_config.yaml": data}}, f)
+PYEOF
 
 	UPDATE_EXIT_CODE=1
 	UPDATE_OUTPUT=""
-	if [[ -f "$WORK_DIR/ramen-configmap-template.yaml" ]]; then
-		{
-			echo "apiVersion: v1"
-			echo "kind: ConfigMap"
-			echo "metadata:"
-			echo "  name: ramen-hub-operator-config"
-			echo "  namespace: openshift-operators"
-			echo "data:"
-			echo "  ramen_manager_config.yaml: |"
-			sed 's/^/    /' "$WORK_DIR/ramen_manager_config.yaml"
-		} >"$WORK_DIR/ramen-configmap-updated.yaml"
-		if UPDATE_OUTPUT=$(oc apply -f "$WORK_DIR/ramen-configmap-updated.yaml" 2>&1); then
-			UPDATE_EXIT_CODE=0
-		else
-			UPDATE_EXIT_CODE=$?
-		fi
-		rm -f "$WORK_DIR/ramen-configmap-template.yaml" "$WORK_DIR/ramen-configmap-updated.yaml"
+	if UPDATE_OUTPUT=$(oc patch configmap/ramen-hub-operator-config \
+		-n openshift-operators \
+		--type=merge \
+		--patch-file="$PATCH_JSON" 2>&1); then
+		UPDATE_EXIT_CODE=0
 	else
-		if UPDATE_OUTPUT=$(oc set data configmap/ramen-hub-operator-config -n openshift-operators \
-			ramen_manager_config.yaml="$(cat "$WORK_DIR/ramen_manager_config.yaml")" 2>&1); then
-			UPDATE_EXIT_CODE=0
-		else
-			UPDATE_EXIT_CODE=$?
-		fi
+		UPDATE_EXIT_CODE=$?
 	fi
+	rm -f "$PATCH_JSON"
 
 	echo "  Update exit code: $UPDATE_EXIT_CODE"
 	echo "  Update output: $UPDATE_OUTPUT"
@@ -207,3 +217,27 @@ s3StoreProfiles:
 fi
 
 echo "  ramen-hub-operator-config updated successfully with base64-encoded CA bundle in s3StoreProfiles"
+
+# Trigger Ramen to re-reconcile all VRGs so it updates ManifestWork objects on each
+# managed cluster with the new caCertificates → BSL.spec.objectStorage.caCert.
+echo "Triggering Ramen VRG reconciliation to propagate caCertificates to managed cluster BSLs..."
+VRG_TRIGGER_FAILED=0
+while IFS= read -r line; do
+	NS=$(echo "$line" | awk '{print $1}')
+	NAME=$(echo "$line" | awk '{print $2}')
+	[[ -z "$NS" || -z "$NAME" ]] && continue
+	if oc annotate vrg "$NAME" -n "$NS" \
+		ramendr.openshift.io/reconcile-trigger="$(date +%s)" \
+		--overwrite 2>/dev/null; then
+		echo "  ✅ Annotated VRG $NS/$NAME"
+	else
+		echo "  ⚠️  Failed to annotate VRG $NS/$NAME" >&2
+		VRG_TRIGGER_FAILED=1
+	fi
+done < <(oc get vrg -A --no-headers -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name' 2>/dev/null || true)
+
+if [[ $VRG_TRIGGER_FAILED -eq 0 ]]; then
+	echo "  ✅ VRG reconciliation triggered — Ramen will update spoke BSLs with caCertificates"
+else
+	echo "  ⚠️  Some VRG annotations failed; BSLs may need manual reconciliation" >&2
+fi

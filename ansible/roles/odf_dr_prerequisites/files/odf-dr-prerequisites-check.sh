@@ -251,24 +251,24 @@ check_ca_configuration() {
 
 	echo "Checking CA configuration on $cluster..."
 
-	# Check if cluster-proxy-ca-bundle ConfigMap exists
-	if ! oc --kubeconfig="$kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config &>/dev/null; then
-		report_check_failure "CA config ($cluster): ConfigMap cluster-proxy-ca-bundle not found in openshift-config"
+	# Check if vp-pattern-proxy-ca-bundle ConfigMap exists
+	if ! oc --kubeconfig="$kubeconfig" get configmap vp-pattern-proxy-ca-bundle -n openshift-config &>/dev/null; then
+		report_check_failure "CA config ($cluster): ConfigMap vp-pattern-proxy-ca-bundle not found in openshift-config"
 		return 1
 	fi
 
 	# Check if ConfigMap has certificate data
-	local ca_bundle_size=$(oc --kubeconfig="$kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null | wc -c || echo "0")
+	local ca_bundle_size=$(oc --kubeconfig="$kubeconfig" get configmap vp-pattern-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null | wc -c || echo "0")
 	ca_bundle_size=$(echo "$ca_bundle_size" | tr -d ' \n')
 	if [[ $ca_bundle_size -lt 100 ]]; then
-		report_check_failure "CA config ($cluster): cluster-proxy-ca-bundle data ca-bundle.crt too small or empty (bytes: $ca_bundle_size)"
+		report_check_failure "CA config ($cluster): vp-pattern-proxy-ca-bundle data ca-bundle.crt too small or empty (bytes: $ca_bundle_size)"
 		return 1
 	fi
 
 	# Check if Proxy object is configured
 	local proxy_trusted_ca=$(oc --kubeconfig="$kubeconfig" get proxy cluster -o jsonpath='{.spec.trustedCA.name}' 2>/dev/null || echo "")
-	if [[ "$proxy_trusted_ca" != "cluster-proxy-ca-bundle" ]]; then
-		report_check_failure "CA config ($cluster): Proxy cluster spec.trustedCA.name is '$proxy_trusted_ca' (expected cluster-proxy-ca-bundle)"
+	if [[ "$proxy_trusted_ca" != "vp-pattern-proxy-ca-bundle" ]]; then
+		report_check_failure "CA config ($cluster): Proxy cluster spec.trustedCA.name is '$proxy_trusted_ca' (expected vp-pattern-proxy-ca-bundle)"
 		return 1
 	fi
 
@@ -285,9 +285,9 @@ check_ca_material_completeness() {
 	echo "Checking CA material completeness across all clusters..."
 
 	# Extract CA bundle from each cluster
-	local hub_ca_bundle=$(oc --kubeconfig="$hub_kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
-	local primary_ca_bundle=$(oc --kubeconfig="$primary_kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
-	local secondary_ca_bundle=$(oc --kubeconfig="$secondary_kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
+	local hub_ca_bundle=$(oc --kubeconfig="$hub_kubeconfig" get configmap vp-pattern-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
+	local primary_ca_bundle=$(oc --kubeconfig="$primary_kubeconfig" get configmap vp-pattern-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
+	local secondary_ca_bundle=$(oc --kubeconfig="$secondary_kubeconfig" get configmap vp-pattern-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
 
 	# Check if all CA bundles exist and have reasonable size
 	if [[ -z "$hub_ca_bundle" || ${#hub_ca_bundle} -lt 100 ]]; then
@@ -305,77 +305,41 @@ check_ca_material_completeness() {
 		return 1
 	fi
 
-	# Check if all CA bundles contain certificates from all three clusters
-	echo "🔍 Debug: Checking CA bundle contents..."
-	echo "Hub CA bundle size: ${#hub_ca_bundle} characters"
-	echo "Primary CA bundle size: ${#primary_ca_bundle} characters"
-	echo "Secondary CA bundle size: ${#secondary_ca_bundle} characters"
-	echo "Hub CA bundle first 500 chars:"
-	echo "${hub_ca_bundle:0:500}"
-	echo ""
+	# Check that each bundle contains PEM certificate data.
+	# Note: vp-manage-proxy-cluster-ca writes standard PEM without custom markers.
+	local MIN_CERTS=3
+	local hub_cert_count primary_cert_count secondary_cert_count
+	hub_cert_count=$(echo "$hub_ca_bundle" | grep -c "BEGIN CERTIFICATE" || echo "0")
+	primary_cert_count=$(echo "$primary_ca_bundle" | grep -c "BEGIN CERTIFICATE" || echo "0")
+	secondary_cert_count=$(echo "$secondary_ca_bundle" | grep -c "BEGIN CERTIFICATE" || echo "0")
 
-	# Look for hub cluster certificates
-	if [[ "$hub_ca_bundle" != *"# CA from hub-ca"* ]]; then
-		echo "Available markers in hub CA bundle:"
-		echo "$hub_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
-		report_check_failure "CA material: hub bundle missing marker '# CA from hub-ca'"
+	echo "Hub CA bundle: ${#hub_ca_bundle} chars, ${hub_cert_count} certificates"
+	echo "Primary CA bundle: ${#primary_ca_bundle} chars, ${primary_cert_count} certificates"
+	echo "Secondary CA bundle: ${#secondary_ca_bundle} chars, ${secondary_cert_count} certificates"
+
+	if [[ "$hub_cert_count" -lt "$MIN_CERTS" ]]; then
+		report_check_failure "CA material: hub bundle has only ${hub_cert_count} certificates (expected at least ${MIN_CERTS})"
 		return 1
 	fi
 
-	if [[ "$primary_ca_bundle" != *"# CA from hub-ca"* ]]; then
-		echo "Available markers in primary CA bundle:"
-		echo "$primary_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
-		report_check_failure "CA material: primary bundle missing marker '# CA from hub-ca'"
+	if [[ "$primary_cert_count" -lt "$MIN_CERTS" ]]; then
+		report_check_failure "CA material: primary ($PRIMARY_CLUSTER) bundle has only ${primary_cert_count} certificates (expected at least ${MIN_CERTS})"
 		return 1
 	fi
 
-	if [[ "$secondary_ca_bundle" != *"# CA from hub-ca"* ]]; then
-		echo "Available markers in secondary CA bundle:"
-		echo "$secondary_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
-		report_check_failure "CA material: secondary bundle missing marker '# CA from hub-ca'"
-		return 1
-	fi
-
-	# Look for primary cluster certificates (marker from odf-ssl-certificate-extraction.sh)
-	if [[ "$hub_ca_bundle" != *"# CA from ${PRIMARY_CLUSTER}-ca"* ]]; then
-		report_check_failure "CA material: hub bundle missing marker '# CA from ${PRIMARY_CLUSTER}-ca'"
-		return 1
-	fi
-
-	if [[ "$primary_ca_bundle" != *"# CA from ${PRIMARY_CLUSTER}-ca"* ]]; then
-		report_check_failure "CA material: primary bundle missing marker '# CA from ${PRIMARY_CLUSTER}-ca'"
-		return 1
-	fi
-
-	if [[ "$secondary_ca_bundle" != *"# CA from ${PRIMARY_CLUSTER}-ca"* ]]; then
-		report_check_failure "CA material: secondary bundle missing marker '# CA from ${PRIMARY_CLUSTER}-ca'"
-		return 1
-	fi
-
-	# Look for secondary cluster certificates
-	if [[ "$hub_ca_bundle" != *"# CA from ${SECONDARY_CLUSTER}-ca"* ]]; then
-		report_check_failure "CA material: hub bundle missing marker '# CA from ${SECONDARY_CLUSTER}-ca'"
-		return 1
-	fi
-
-	if [[ "$primary_ca_bundle" != *"# CA from ${SECONDARY_CLUSTER}-ca"* ]]; then
-		report_check_failure "CA material: primary bundle missing marker '# CA from ${SECONDARY_CLUSTER}-ca'"
-		return 1
-	fi
-
-	if [[ "$secondary_ca_bundle" != *"# CA from ${SECONDARY_CLUSTER}-ca"* ]]; then
-		report_check_failure "CA material: secondary bundle missing marker '# CA from ${SECONDARY_CLUSTER}-ca'"
+	if [[ "$secondary_cert_count" -lt "$MIN_CERTS" ]]; then
+		report_check_failure "CA material: secondary ($SECONDARY_CLUSTER) bundle has only ${secondary_cert_count} certificates (expected at least ${MIN_CERTS})"
 		return 1
 	fi
 
 	# Check that all CA bundles are identical (they should contain the same combined certificate data)
 	if [[ "$hub_ca_bundle" != "$primary_ca_bundle" ]]; then
-		report_check_failure "CA material: hub and primary cluster-proxy-ca-bundle contents differ (must be identical after trust sync)"
+		report_check_failure "CA material: hub and primary vp-pattern-proxy-ca-bundle contents differ (must be identical after trust sync)"
 		return 1
 	fi
 
 	if [[ "$hub_ca_bundle" != "$secondary_ca_bundle" ]]; then
-		report_check_failure "CA material: hub and secondary cluster-proxy-ca-bundle contents differ (must be identical after trust sync)"
+		report_check_failure "CA material: hub and secondary vp-pattern-proxy-ca-bundle contents differ (must be identical after trust sync)"
 		return 1
 	fi
 

@@ -17,7 +17,7 @@ metadata:
   name: policy-odf-ssl-certificate-management
   namespace: open-cluster-management
 spec:
-  disabled: false
+  disabled: true
   policy-templates:
   - objectDefinition:
       apiVersion: policy.open-cluster-management.io/v1

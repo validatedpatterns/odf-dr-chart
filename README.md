@@ -1,6 +1,6 @@
 # odf-dr-chart
 
-![Version: 0.0.1](https://img.shields.io/badge/Version-0.0.1-informational?style=flat-square)
+![Version: 0.0.2](https://img.shields.io/badge/Version-0.0.2-informational?style=flat-square)
 
 Standalone Helm chart for ODF storage infrastructure supporting Regional DR. Deploys ODF SSL certificate extraction, Submariner network overlay, MirrorPeer storage mirroring, ODF DR prerequisites.
 
@@ -27,9 +27,10 @@ v0.1.0 - Initial release
 | odf.postInstallFixesEnabled | bool | `true` | Enable ODF post-install automation (MirrorPeer, prerequisites checker, Ramen trusted-CA jobs/RBAC). |
 | odfRamenTrustedCa.pollInterval | int | `15` | Polling interval in seconds for readiness checks inside the trusted-CA job. |
 | odfRamenTrustedCa.ramenS3WaitSeconds | int | `3600` | Maximum seconds to wait for Ramen s3StoreProfiles to be populated before the trusted-CA job gives up. |
-| odfRamenTrustedCa.trustedCaWaitSeconds | int | `3600` | Maximum seconds to wait for the hub cluster-proxy-ca-bundle trusted CA before the job gives up. |
+| odfRamenTrustedCa.trustedCaWaitSeconds | int | `3600` | Maximum seconds to wait for the hub vp-pattern-proxy-ca-bundle trusted CA before the job gives up. |
 | odfSslCertificateExtractor.clusterReadinessMaxAttempts | int | `150` | Maximum number of attempts to check DR ManagedCluster readiness before the extractor job fails. |
 | odfSslCertificateExtractor.clusterReadinessSleepSeconds | int | `30` | Seconds to sleep between each ManagedCluster readiness poll attempt. |
+| odfSslCertificateExtractor.enabled | bool | `false` | When false, skip legacy SSL certificate extraction jobs (disable when using vp-manage-proxy-cluster-ca). |
 | regionalDR[0].globalnetEnabled | bool | `false` | Enable Submariner Globalnet. Required when primary and secondary cluster CIDRs overlap. |
 | regionalDR[0].name | string | `"resilient"` | Name of this DR pair set. Must be unique within the regionalDR list and match the ACM policy placement label. |
 | submariner.NATTEnable | bool | `true` | Enable NAT traversal (NAT-T) for Submariner IPsec tunnels. |

@@ -1,3 +1,4 @@
+{{- if ((.Values.odfSslCertificateExtractor | default dict).enabled | default false) }}
 apiVersion: policy.open-cluster-management.io/v1
 kind: PlacementBinding
 metadata:
@@ -17,3 +18,4 @@ subjects:
 - name: policy-odf-managed-cluster-ssl
   kind: Policy
   apiGroup: policy.open-cluster-management.io
+{{- end }}

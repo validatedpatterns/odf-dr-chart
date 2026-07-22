@@ -1,3 +1,4 @@
+{{- if ((.Values.odfSslCertificateExtractor | default dict).enabled | default false) }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -59,3 +60,4 @@ roleRef:
   kind: ClusterRole
   name: odf-ssl-extractor-role
   apiGroup: rbac.authorization.k8s.io
+{{- end }}

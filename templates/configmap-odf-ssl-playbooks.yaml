@@ -1,3 +1,4 @@
+{{- if ((.Values.odfSslCertificateExtractor | default dict).enabled | default false) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -33,3 +34,4 @@ data:
 {{ .Files.Get "scripts/ansible/tasks/kubeconfig.yml" | indent 4 }}
   tasks_kubeconfig_attempt.yml: |
 {{ .Files.Get "scripts/ansible/tasks/kubeconfig-attempt.yml" | indent 4 }}
+{{- end }}

@@ -51,17 +51,20 @@ ansible:
   # -- Argo CD resource sync-options applied to the Ansible ConfigMap.
   configMapArgoSyncOptions: Prune=false,ServerSideApply=true
 
-# Post-sync job odf-ramen-trusted-ca (wave 9): CA from hub cluster-proxy-ca-bundle; waits for Ramen s3StoreProfiles.
+# Post-sync job odf-ramen-trusted-ca (wave 9): CA from hub vp-pattern-proxy-ca-bundle; waits for Ramen s3StoreProfiles.
 odfRamenTrustedCa:
   # -- Maximum seconds to wait for Ramen s3StoreProfiles to be populated before the trusted-CA job gives up.
   ramenS3WaitSeconds: 3600
-  # -- Maximum seconds to wait for the hub cluster-proxy-ca-bundle trusted CA before the job gives up.
+  # -- Maximum seconds to wait for the hub vp-pattern-proxy-ca-bundle trusted CA before the job gives up.
   trustedCaWaitSeconds: 3600
   # -- Polling interval in seconds for readiness checks inside the trusted-CA job.
   pollInterval: 15
 
 # odf-ssl-certificate-extractor Job: wait for both DR ManagedClusters before extraction.
+# Set enabled: false when vp-manage-proxy-cluster-ca-chart handles CA collection.
 odfSslCertificateExtractor:
+  # -- When false, skip legacy SSL certificate extraction jobs (disable when using vp-manage-proxy-cluster-ca).
+  enabled: false
   # -- Maximum number of attempts to check DR ManagedCluster readiness before the extractor job fails.
   clusterReadinessMaxAttempts: 150
   # -- Seconds to sleep between each ManagedCluster readiness poll attempt.
