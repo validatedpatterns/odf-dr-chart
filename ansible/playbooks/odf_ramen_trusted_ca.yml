@@ -1,8 +1,0 @@
----
-# Runs on hub after MirrorPeer (sync wave): use cluster-proxy-ca-bundle CA material, wait for
-# s3StoreProfiles in ramen-hub-operator-config, then patch caCertificates (opp-policy-chart parity).
-- name: Ramen hub CA from trusted bundle
-  hosts: localhost
-  gather_facts: false
-  roles:
-    - odf_ramen_trusted_ca

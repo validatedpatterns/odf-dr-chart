@@ -1,6 +1,0 @@
----
-odf_ramen_trusted_ca_work_dir: /tmp/odf-ssl-certs
-# Waits: hub trusted CA bundle (from policy) and Ramen s3StoreProfiles (from ODF after MirrorPeer)
-odf_ramen_trusted_ca_wait_seconds: 3600
-odf_ramen_s3_wait_seconds: 3600
-odf_ramen_poll_interval: 15

@@ -6,6 +6,9 @@ if [[ -z "${ODF_PREREQ_LINEBUF:-}" ]] && command -v stdbuf >/dev/null 2>&1; then
 fi
 set -euo pipefail
 
+CA_BUNDLE_NAME="$CA_BUNDLE_NAME"
+CA_BUNDLE_NAMESPACE="${CA_BUNDLE_NAMESPACE:-openshift-config}"
+
 echo "Starting ODF DR prerequisites check..."
 
 # Configuration (PRIMARY_CLUSTER and SECONDARY_CLUSTER from values.yaml via env)
@@ -252,24 +255,24 @@ check_ca_configuration() {
 
 	echo "Checking CA configuration on $cluster..."
 
-	# Check if cluster-proxy-ca-bundle ConfigMap exists
-	if ! oc --kubeconfig="$kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config &>/dev/null; then
-		report_check_failure "CA config ($cluster): ConfigMap cluster-proxy-ca-bundle not found in openshift-config"
+	# Check if $CA_BUNDLE_NAME ConfigMap exists
+	if ! oc --kubeconfig="$kubeconfig" get configmap $CA_BUNDLE_NAME -n "$CA_BUNDLE_NAMESPACE" &>/dev/null; then
+		report_check_failure "CA config ($cluster): ConfigMap $CA_BUNDLE_NAME not found in $CA_BUNDLE_NAMESPACE"
 		return 1
 	fi
 
 	# Check if ConfigMap has certificate data
-	local ca_bundle_size=$(oc --kubeconfig="$kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null | wc -c || echo "0")
+	local ca_bundle_size=$(oc --kubeconfig="$kubeconfig" get configmap $CA_BUNDLE_NAME -n "$CA_BUNDLE_NAMESPACE" -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null | wc -c || echo "0")
 	ca_bundle_size=$(echo "$ca_bundle_size" | tr -d ' \n')
 	if [[ $ca_bundle_size -lt 100 ]]; then
-		report_check_failure "CA config ($cluster): cluster-proxy-ca-bundle data ca-bundle.crt too small or empty (bytes: $ca_bundle_size)"
+		report_check_failure "CA config ($cluster): $CA_BUNDLE_NAME data ca-bundle.crt too small or empty (bytes: $ca_bundle_size)"
 		return 1
 	fi
 
 	# Check if Proxy object is configured
 	local proxy_trusted_ca=$(oc --kubeconfig="$kubeconfig" get proxy cluster -o jsonpath='{.spec.trustedCA.name}' 2>/dev/null || echo "")
-	if [[ "$proxy_trusted_ca" != "cluster-proxy-ca-bundle" ]]; then
-		report_check_failure "CA config ($cluster): Proxy cluster spec.trustedCA.name is '$proxy_trusted_ca' (expected cluster-proxy-ca-bundle)"
+	if [[ "$proxy_trusted_ca" != "$CA_BUNDLE_NAME" ]]; then
+		report_check_failure "CA config ($cluster): Proxy cluster spec.trustedCA.name is '$proxy_trusted_ca' (expected $CA_BUNDLE_NAME)"
 		return 1
 	fi
 
@@ -392,9 +395,9 @@ check_ca_material_completeness() {
 	echo "Checking CA material completeness across all clusters (mode: ${CA_MATERIAL_MODE})..."
 
 	# Extract CA bundle from each cluster
-	local hub_ca_bundle=$(oc --kubeconfig="$hub_kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
-	local primary_ca_bundle=$(oc --kubeconfig="$primary_kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
-	local secondary_ca_bundle=$(oc --kubeconfig="$secondary_kubeconfig" get configmap cluster-proxy-ca-bundle -n openshift-config -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
+	local hub_ca_bundle=$(oc --kubeconfig="$hub_kubeconfig" get configmap $CA_BUNDLE_NAME -n "$CA_BUNDLE_NAMESPACE" -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
+	local primary_ca_bundle=$(oc --kubeconfig="$primary_kubeconfig" get configmap $CA_BUNDLE_NAME -n "$CA_BUNDLE_NAMESPACE" -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
+	local secondary_ca_bundle=$(oc --kubeconfig="$secondary_kubeconfig" get configmap $CA_BUNDLE_NAME -n "$CA_BUNDLE_NAMESPACE" -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
 
 	# Check if all CA bundles exist and have reasonable size
 	if [[ -z "$hub_ca_bundle" || ${#hub_ca_bundle} -lt 100 ]]; then
@@ -427,12 +430,12 @@ check_ca_material_completeness() {
 
 	# Check that all CA bundles are identical (they should contain the same combined certificate data)
 	if [[ "$hub_ca_bundle" != "$primary_ca_bundle" ]]; then
-		report_check_failure "CA material: hub and primary cluster-proxy-ca-bundle contents differ (must be identical after trust sync)"
+		report_check_failure "CA material: hub and primary $CA_BUNDLE_NAME contents differ (must be identical after trust sync)"
 		return 1
 	fi
 
 	if [[ "$hub_ca_bundle" != "$secondary_ca_bundle" ]]; then
-		report_check_failure "CA material: hub and secondary cluster-proxy-ca-bundle contents differ (must be identical after trust sync)"
+		report_check_failure "CA material: hub and secondary $CA_BUNDLE_NAME contents differ (must be identical after trust sync)"
 		return 1
 	fi
 

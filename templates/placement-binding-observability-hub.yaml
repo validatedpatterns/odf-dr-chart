@@ -1,21 +1,19 @@
-{{- if eq "1" (include "rdr.odfSslCertificateExtractorEnabled" . | trim) }}
 apiVersion: policy.open-cluster-management.io/v1
 kind: PlacementBinding
 metadata:
-  name: binding-odf-ssl-certificate-management-hub
+  name: binding-observability-storage-hub
   namespace: open-cluster-management
   labels:
-    app.kubernetes.io/name: odf-ssl-certificate-management
+    app.kubernetes.io/name: observability
     app.kubernetes.io/component: placement-binding
   annotations:
     argocd.argoproj.io/compare-options: IgnoreExtraneous
-    argocd.argoproj.io/sync-wave: "3"
+    argocd.argoproj.io/sync-wave: "2"
 placementRef:
-  name: placement-odf-ssl-hub
+  name: placement-observability-hub
   kind: PlacementRule
   apiGroup: apps.open-cluster-management.io
 subjects:
-- name: policy-odf-ssl-certificate-management
+- name: policy-observability-storage
   kind: Policy
   apiGroup: policy.open-cluster-management.io
-{{- end }}
