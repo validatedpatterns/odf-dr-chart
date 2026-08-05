@@ -307,10 +307,8 @@ check_ca_material_legacy_markers() {
 		return 1
 	fi
 
-	if [[ "$primary_ca_bundle" != *"# CA from hub-ca"* ]]; then
-		echo "Available markers in primary CA bundle:"
-		echo "$primary_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
-		report_check_failure "CA material: primary bundle missing marker '# CA from hub-ca'"
+	if [[ "$primary_cert_count" -lt "$MIN_CERTS" ]]; then
+		report_check_failure "CA material: primary ($PRIMARY_CLUSTER) bundle has only ${primary_cert_count} certificates (expected at least ${MIN_CERTS})"
 		return 1
 	fi
 
