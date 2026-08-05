@@ -6,7 +6,7 @@ if [[ -z "${ODF_PREREQ_LINEBUF:-}" ]] && command -v stdbuf >/dev/null 2>&1; then
 fi
 set -euo pipefail
 
-CA_BUNDLE_NAME="$CA_BUNDLE_NAME"
+CA_BUNDLE_NAME="${CA_BUNDLE_NAME:-vp-pattern-proxy-ca-bundle}"
 CA_BUNDLE_NAMESPACE="${CA_BUNDLE_NAMESPACE:-openshift-config}"
 
 echo "Starting ODF DR prerequisites check..."
@@ -256,13 +256,14 @@ check_ca_configuration() {
 	echo "Checking CA configuration on $cluster..."
 
 	# Check if $CA_BUNDLE_NAME ConfigMap exists
-	if ! oc --kubeconfig="$kubeconfig" get configmap $CA_BUNDLE_NAME -n "$CA_BUNDLE_NAMESPACE" &>/dev/null; then
+	if ! oc --kubeconfig="$kubeconfig" get configmap "$CA_BUNDLE_NAME" -n "$CA_BUNDLE_NAMESPACE" &>/dev/null; then
 		report_check_failure "CA config ($cluster): ConfigMap $CA_BUNDLE_NAME not found in $CA_BUNDLE_NAMESPACE"
 		return 1
 	fi
 
 	# Check if ConfigMap has certificate data
-	local ca_bundle_size=$(oc --kubeconfig="$kubeconfig" get configmap $CA_BUNDLE_NAME -n "$CA_BUNDLE_NAMESPACE" -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null | wc -c || echo "0")
+	local ca_bundle_size
+	ca_bundle_size=$(oc --kubeconfig="$kubeconfig" get configmap "$CA_BUNDLE_NAME" -n "$CA_BUNDLE_NAMESPACE" -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null | wc -c || echo "0")
 	ca_bundle_size=$(echo "$ca_bundle_size" | tr -d ' \n')
 	if [[ $ca_bundle_size -lt 100 ]]; then
 		report_check_failure "CA config ($cluster): $CA_BUNDLE_NAME data ca-bundle.crt too small or empty (bytes: $ca_bundle_size)"
@@ -307,8 +308,10 @@ check_ca_material_legacy_markers() {
 		return 1
 	fi
 
-	if [[ "$primary_cert_count" -lt "$MIN_CERTS" ]]; then
-		report_check_failure "CA material: primary ($PRIMARY_CLUSTER) bundle has only ${primary_cert_count} certificates (expected at least ${MIN_CERTS})"
+	if [[ "$primary_ca_bundle" != *"# CA from hub-ca"* ]]; then
+		echo "Available markers in primary CA bundle:"
+		echo "$primary_ca_bundle" | grep "^# CA from" || echo "No CA markers found"
+		report_check_failure "CA material: primary bundle missing marker '# CA from hub-ca'"
 		return 1
 	fi
 
@@ -393,9 +396,12 @@ check_ca_material_completeness() {
 	echo "Checking CA material completeness across all clusters (mode: ${CA_MATERIAL_MODE})..."
 
 	# Extract CA bundle from each cluster
-	local hub_ca_bundle=$(oc --kubeconfig="$hub_kubeconfig" get configmap $CA_BUNDLE_NAME -n "$CA_BUNDLE_NAMESPACE" -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
-	local primary_ca_bundle=$(oc --kubeconfig="$primary_kubeconfig" get configmap $CA_BUNDLE_NAME -n "$CA_BUNDLE_NAMESPACE" -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
-	local secondary_ca_bundle=$(oc --kubeconfig="$secondary_kubeconfig" get configmap $CA_BUNDLE_NAME -n "$CA_BUNDLE_NAMESPACE" -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
+	local hub_ca_bundle
+	hub_ca_bundle=$(oc --kubeconfig="$hub_kubeconfig" get configmap "$CA_BUNDLE_NAME" -n "$CA_BUNDLE_NAMESPACE" -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
+	local primary_ca_bundle
+	primary_ca_bundle=$(oc --kubeconfig="$primary_kubeconfig" get configmap "$CA_BUNDLE_NAME" -n "$CA_BUNDLE_NAMESPACE" -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
+	local secondary_ca_bundle
+	secondary_ca_bundle=$(oc --kubeconfig="$secondary_kubeconfig" get configmap "$CA_BUNDLE_NAME" -n "$CA_BUNDLE_NAMESPACE" -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null || echo "")
 
 	# Check if all CA bundles exist and have reasonable size
 	if [[ -z "$hub_ca_bundle" || ${#hub_ca_bundle} -lt 100 ]]; then
