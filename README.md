@@ -1,6 +1,6 @@
 # odf-dr-chart
 
-![Version: 0.0.4](https://img.shields.io/badge/Version-0.0.4-informational?style=flat-square)
+![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square)
 
 ODF-specific Regional DR chart: MirrorPeer, ODF prerequisites, and observability ObjectBucketClaim/storage policy. Submariner and s3-ssl live in opp-policy-chart.
 
@@ -10,11 +10,11 @@ Ramen `s3StoreProfiles` `caCertificates` injection is owned by **opp-policy-char
 
 ## Notable changes
 
-v0.0.4 - Keep only ODF/MirrorPeer/observability; move Submariner and SSL to opp-policy; drop ramen trusted-CA job
+v0.1.0 - Keep only ODF/MirrorPeer/observability; move Submariner and SSL to opp-policy; drop ramen trusted-CA job
 
 v0.0.3 - Add ObjectBucketClaim and policy-observability-storage (from opp-policy-chart)
 
-v0.1.0 - Initial release
+v0.0.1 - Initial release
 
 ## Values
 
