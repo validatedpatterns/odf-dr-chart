@@ -1,13 +1,7 @@
 {
+  "threshold": 20,
   "ignore": [
-    "templates/_helpers.tpl",
-    "templates/_ansible_bootstrap.tpl",
-    "templates/_ansible_configmap_data.tpl",
-    "templates/rbac-odf-dr-prerequisites.yaml",
-    "templates/rbac-odf-ramen-trusted-ca.yaml",
-    "templates/rbac-odf-ssl-certificate-precheck.yaml",
-    "templates/rbac-odf-ssl-extractor.yaml",
-    "templates/rbac-submariner-prerequisites.yaml",
-    "templates/rbac-submariner-sg-tag.yaml"
+    "**/node_modules/**",
+    "templates/rbac-odf-dr-prerequisites.yaml"
   ]
 }

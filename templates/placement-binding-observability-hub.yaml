@@ -2,20 +2,20 @@
 apiVersion: policy.open-cluster-management.io/v1
 kind: PlacementBinding
 metadata:
-  name: binding-odf-ssl-certificates
+  name: binding-observability-storage-hub
   namespace: open-cluster-management
   labels:
-    app.kubernetes.io/name: odf-ssl-certificate-management
+    app.kubernetes.io/name: observability
     app.kubernetes.io/component: placement-binding
   annotations:
     argocd.argoproj.io/compare-options: IgnoreExtraneous
-    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-wave: "2"
 placementRef:
-  name: placement-odf-ssl-certificates
+  name: placement-observability-hub
   kind: PlacementRule
   apiGroup: apps.open-cluster-management.io
 subjects:
-- name: policy-odf-managed-cluster-ssl
+- name: policy-observability-storage
   kind: Policy
   apiGroup: policy.open-cluster-management.io
 {{- end }}

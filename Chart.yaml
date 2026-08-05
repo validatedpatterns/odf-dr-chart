@@ -1,11 +1,10 @@
 apiVersion: v2
 name: odf-dr-chart
 description: >
-  Standalone Helm chart for ODF storage infrastructure supporting Regional DR.
-  Deploys ODF SSL certificate extraction, Submariner network overlay, MirrorPeer
-  storage mirroring, ODF DR prerequisites.
+  ODF-specific Regional DR chart: MirrorPeer, ODF prerequisites, and observability
+  ObjectBucketClaim/storage policy. Submariner and s3-ssl live in opp-policy-chart.
 keywords:
   - odf
   - pattern
   - regionaldr
-version: 0.0.2
+version: 0.1.0

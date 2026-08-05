@@ -1,22 +1,16 @@
 ---
-# Namespace for ODF SSL / CA post-install Jobs and RBAC (not cluster-proxy-ca-bundle).
+# Namespace for ODF post-install Jobs (prerequisites checker).
 clusterCaMgt:
-  # -- Namespace for ODF CA prerequisites and Ramen trusted-CA workloads.
+  # -- Namespace for ODF CA prerequisites workloads.
   namespace: cluster-ca-mgt
   # -- Create clusterCaMgt.namespace when installing the chart.
   createNamespace: false
 
-global:
-  # -- Base domain shared by all clusters (e.g. example.com). Used to derive per-cluster baseDomain.
-  clusterDomain: cluster.example.com
-  # -- Cloud platform type. AWS enables Hive ExternalSecret, ClusterDeployment platform.aws, Submariner gateway/credentials and SG-tag job. Use non-AWS (e.g. BareMetal) to skip those.
-  clusterPlatform: AWS
-
-# ODF post-install automation: MirrorPeer, prerequisites checker + Ramen hub trusted CA jobs/RBAC.
+# ODF post-install automation: MirrorPeer + prerequisites checker.
 odf:
-  # -- Enable ODF post-install automation (MirrorPeer, prerequisites checker, Ramen trusted-CA jobs/RBAC).
+  # -- Enable ODF post-install automation (MirrorPeer, prerequisites checker).
   postInstallFixesEnabled: true
-  # When postInstallFixesEnabled is false: chart creates DRCluster CRs (hub) for primary/secondary; set S3 profile names that exist in hub Ramen config.
+  # When postInstallFixesEnabled is false: reserved for DRCluster S3 profile names.
   drCluster:
     # -- S3 profile name for the primary DRCluster CR. Required only when postInstallFixesEnabled is false.
     primaryS3ProfileName: ""
@@ -24,24 +18,26 @@ odf:
     secondaryS3ProfileName: ""
 
 # DR pair cluster names. Must match ACM ManagedCluster metadata.name.
-# Override via extraValueFiles (e.g. overrides/values-cluster-names.yaml).
 regionalDR:
-  - # -- Name of this DR pair set. Must be unique within the regionalDR list and match the ACM policy placement label.
+  - # -- Name of this DR pair set. Must be unique within the regionalDR list.
     name: resilient
-    # -- Enable Submariner Globalnet. Required when primary and secondary cluster CIDRs overlap.
-    globalnetEnabled: false
+    clusters:
+      primary:
+        # -- ACM ManagedCluster name for the primary site.
+        name: ocp-primary
+      secondary:
+        # -- ACM ManagedCluster name for the secondary site.
+        name: ocp-secondary
 
-submariner:
-  # -- EC2 instance type for Submariner gateway nodes.
-  instanceType: m5.xlarge
-  # -- IPsec NAT-T UDP port used by Submariner.
-  ipsecNatPort: 4500
-  # -- Enable NAT traversal (NAT-T) for Submariner IPsec tunnels.
-  NATTEnable: true
-  # -- Submariner cable driver (vxlan or libreswan).
-  cableDriver: vxlan
-  # -- Enable EC2 security group tagging job. AWS only; requires global.clusterPlatform=AWS.
-  sgTagJobEnabled: false
+# When odf.postInstallFixesEnabled is true: odf-dr-prerequisites job/RBAC.
+odfDrPrerequisites:
+  # -- CA completeness check mode. Use trust-bundle with vp-manage-proxy-cluster-ca
+  # (validates PEM and identical CA ConfigMaps). legacy expects '# CA from …' markers.
+  caMaterialMode: trust-bundle
+  # -- CA ConfigMap name to validate (vp-manage-proxy-cluster-ca configMapName).
+  caBundleName: vp-pattern-proxy-ca-bundle
+  # -- Namespace of the CA ConfigMap.
+  caBundleNamespace: openshift-config
 
 ansible:
   # -- Container image used for Ansible post-install jobs.
@@ -50,22 +46,3 @@ ansible:
   verbosity: 0
   # -- Argo CD resource sync-options applied to the Ansible ConfigMap.
   configMapArgoSyncOptions: Prune=false,ServerSideApply=true
-
-# Post-sync job odf-ramen-trusted-ca (wave 9): CA from hub vp-pattern-proxy-ca-bundle; waits for Ramen s3StoreProfiles.
-odfRamenTrustedCa:
-  # -- Maximum seconds to wait for Ramen s3StoreProfiles to be populated before the trusted-CA job gives up.
-  ramenS3WaitSeconds: 3600
-  # -- Maximum seconds to wait for the hub vp-pattern-proxy-ca-bundle trusted CA before the job gives up.
-  trustedCaWaitSeconds: 3600
-  # -- Polling interval in seconds for readiness checks inside the trusted-CA job.
-  pollInterval: 15
-
-# odf-ssl-certificate-extractor Job: wait for both DR ManagedClusters before extraction.
-# Set enabled: false when vp-manage-proxy-cluster-ca-chart handles CA collection.
-odfSslCertificateExtractor:
-  # -- When false, skip legacy SSL certificate extraction jobs (disable when using vp-manage-proxy-cluster-ca).
-  enabled: false
-  # -- Maximum number of attempts to check DR ManagedCluster readiness before the extractor job fails.
-  clusterReadinessMaxAttempts: 150
-  # -- Seconds to sleep between each ManagedCluster readiness poll attempt.
-  clusterReadinessSleepSeconds: 30

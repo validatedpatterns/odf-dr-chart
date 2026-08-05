@@ -5,12 +5,17 @@
 
 {{ template "chart.description" . }}
 
-This chart deploys ODF storage infrastructure supporting Regional DR: SSL certificate extraction, Submariner network overlay, MirrorPeer storage mirroring, ODF DR prerequisites, and Ramen hub trusted-CA workloads.
-Consumed by the ramendr pattern as a dedicated ArgoCD application.
+Always deployed with **regionaldr-with-virt**. This chart supplies ODF-specific pieces: MirrorPeer, ODF prerequisites checker, and observability ObjectBucketClaim/storage policy.
+Submariner and s3-ssl live in **opp-policy-chart**. Cluster CA is owned by **vp-manage-proxy-cluster-ca**.
+Ramen `s3StoreProfiles` `caCertificates` injection is owned by **opp-policy-chart** (`s3CaInjector`).
 
 ## Notable changes
 
-v0.1.0 - Initial release
+v0.1.0 - Keep only ODF/MirrorPeer/observability; move Submariner and SSL to opp-policy; drop ramen trusted-CA job
+
+v0.0.3 - Add ObjectBucketClaim and policy-observability-storage (from opp-policy-chart)
+
+v0.0.1 - Initial release
 
 {{ template "chart.homepageLine" . }}
 
